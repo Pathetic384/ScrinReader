@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "AI-Powered Screen Reader",
+  "version": "1.0",
+  "description": "A screen reader with AI to describe images and charts for visually impaired users.",
+  "permissions": ["activeTab", "scripting", "storage", "tabs"],
+  "host_permissions": [
+    "https://vision.googleapis.com/*",
+    "https://translation.googleapis.com/*",
+    "https://static.wikia.nocookie.net/*",
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
