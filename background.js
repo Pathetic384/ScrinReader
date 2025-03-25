@@ -1,21 +1,11 @@
 // background.js
-import { API_KEY } from "./keys";
+import { API_KEY } from "./keys.js";
 console.log("Screen Reader Extension: Background script loaded!");
 
 const GOOGLE_VISION_API_KEY = "AIzaSyBWfSb-g3oet_WDjtYCm_7lUIdEjlnAcJA"; // No longer needed, but keeping for reference
 const GOOGLE_TRANSLATION_API_KEY = "AIzaSyBWfSb-g3oet_WDjtYCm_7lUIdEjlnAcJA";
 let selectedLanguage = "en-US"; // Default language
 let openaiApiKey = API_KEY;
-
-// Load the API key from chrome.storage.local on startup
-// chrome.storage.local.get(["openaiApiKey"], (result) => {
-//   if (result.openaiApiKey) {
-//     openaiApiKey = result.openaiApiKey;
-//     console.log("OpenAI API key loaded from storage.");
-//   } else {
-//     console.log("No OpenAI API key found in storage.");
-//   }
-// });
 
 // Function to get the device pixel ratio by injecting a script
 async function getDevicePixelRatio() {
@@ -192,16 +182,22 @@ async function describeScreenshot(boundingRect, sender) {
     });
     console.log("Cropped screenshot to base64, length:", croppedBase64.length);
 
+    // Set the prompt based on the selected language
+    const prompt =
+      selectedLanguage === "vi-VN"
+        ? "hãy miêu tả ảnh sau"
+        : "describe this picture";
+
     // Send the cropped screenshot to OpenAI API
     const requestBody = {
-      model: "gpt-4o-mini", // Using gpt-4o as per previous update
+      model: "gpt-4o-mini", // Using gpt-4o-mini as per previous update
       messages: [
         {
           role: "user",
           content: [
             {
               type: "text",
-              text: "describe this picture",
+              text: prompt, // Use the language-specific prompt
             },
             {
               type: "image_url",
@@ -254,13 +250,16 @@ async function describeScreenshot(boundingRect, sender) {
           : "Unable to describe this area.";
     }
 
-    console.log("Original description (English):", description);
+    console.log("Original description:", description);
 
-    // Translate the description if the selected language is Vietnamese
-    const translatedDescription = await translateText(
-      description,
-      selectedLanguage
-    );
+    // Translate the description if the selected language is Vietnamese and the prompt was in English
+    let translatedDescription = description;
+    if (selectedLanguage === "vi-VN" && prompt === "describe this picture") {
+      translatedDescription = await translateText(
+        description,
+        selectedLanguage
+      );
+    }
     console.log("Translated description:", translatedDescription);
 
     return translatedDescription;
