@@ -1,10 +1,11 @@
 // background.js
+import { API_KEY } from "./keys";
 console.log("Screen Reader Extension: Background script loaded!");
 
 const GOOGLE_VISION_API_KEY = "AIzaSyBWfSb-g3oet_WDjtYCm_7lUIdEjlnAcJA"; // No longer needed, but keeping for reference
 const GOOGLE_TRANSLATION_API_KEY = "AIzaSyBWfSb-g3oet_WDjtYCm_7lUIdEjlnAcJA";
 let selectedLanguage = "en-US"; // Default language
-let openaiApiKey = "ib zalo";
+let openaiApiKey = API_KEY;
 
 // Load the API key from chrome.storage.local on startup
 // chrome.storage.local.get(["openaiApiKey"], (result) => {
