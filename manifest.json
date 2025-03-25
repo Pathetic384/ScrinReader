@@ -5,8 +5,8 @@
   "description": "A screen reader with AI to describe images and charts for visually impaired users.",
   "permissions": ["activeTab", "scripting", "storage", "tabs"],
   "host_permissions": [
-    "https://vision.googleapis.com/*",
     "https://translation.googleapis.com/*",
+    "https://api.openai.com/*",
     "https://static.wikia.nocookie.net/*",
     "<all_urls>"
   ],

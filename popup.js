@@ -83,3 +83,55 @@ document.addEventListener("keydown", (event) => {
     });
   }
 });
+
+// New: Handle API key storage
+document.addEventListener("DOMContentLoaded", () => {
+  const apiKeyInput = document.getElementById("apiKeyInput");
+  const saveApiKeyButton = document.getElementById("saveApiKeyButton");
+  const apiKeyStatus = document.getElementById("apiKeyStatus");
+
+  // Load saved API key from chrome.storage
+  chrome.storage.local.get(["openaiApiKey"], (result) => {
+    if (result.openaiApiKey) {
+      apiKeyInput.value = result.openaiApiKey;
+      apiKeyStatus.textContent = "API key loaded.";
+    } else {
+      apiKeyStatus.textContent = "No API key saved yet.";
+    }
+  });
+
+  // Save API key to chrome.storage
+  saveApiKeyButton.addEventListener("click", () => {
+    const apiKey = apiKeyInput.value.trim();
+    if (!apiKey) {
+      apiKeyStatus.textContent = "Please enter a valid API key.";
+      return;
+    }
+
+    chrome.storage.local.set({ openaiApiKey: apiKey }, () => {
+      if (chrome.runtime.lastError) {
+        apiKeyStatus.textContent =
+          "Error saving API key: " + chrome.runtime.lastError.message;
+      } else {
+        apiKeyStatus.textContent = "API key saved successfully.";
+        // Notify background.js of the API key update
+        chrome.runtime.sendMessage(
+          { action: "updateApiKey", apiKey: apiKey },
+          (response) => {
+            if (chrome.runtime.lastError) {
+              console.error(
+                "Error notifying background.js of API key update:",
+                chrome.runtime.lastError
+              );
+            } else {
+              console.log(
+                "Background script notified of API key update:",
+                response
+              );
+            }
+          }
+        );
+      }
+    });
+  });
+});

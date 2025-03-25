@@ -1,9 +1,20 @@
 // background.js
 console.log("Screen Reader Extension: Background script loaded!");
 
-const GOOGLE_VISION_API_KEY = "AIzaSyBWfSb-g3oet_WDjtYCm_7lUIdEjlnAcJA";
-const GOOGLE_TRANSLATION_API_KEY = "AIzaSyBWfSb-g3oet_WDjtYCm_7lUIdEjlnAcJA"; // Same key as Vision API
+const GOOGLE_VISION_API_KEY = "AIzaSyBWfSb-g3oet_WDjtYCm_7lUIdEjlnAcJA"; // No longer needed, but keeping for reference
+const GOOGLE_TRANSLATION_API_KEY = "AIzaSyBWfSb-g3oet_WDjtYCm_7lUIdEjlnAcJA";
 let selectedLanguage = "en-US"; // Default language
+let openaiApiKey = "ib zalo";
+
+// Load the API key from chrome.storage.local on startup
+// chrome.storage.local.get(["openaiApiKey"], (result) => {
+//   if (result.openaiApiKey) {
+//     openaiApiKey = result.openaiApiKey;
+//     console.log("OpenAI API key loaded from storage.");
+//   } else {
+//     console.log("No OpenAI API key found in storage.");
+//   }
+// });
 
 // Function to get the device pixel ratio by injecting a script
 async function getDevicePixelRatio() {
@@ -79,9 +90,54 @@ async function translateText(text, targetLanguage) {
   }
 }
 
-// Function to describe a screenshot using Google Cloud Vision API
+// Function to describe a chart using extracted data
+async function describeChartWithData(chartData) {
+  if (!chartData || !chartData.labels || !chartData.datasets) {
+    return selectedLanguage === "vi-VN"
+      ? "Đây là biểu đồ. Không thể trích xuất dữ liệu chi tiết."
+      : "This is a chart. Detailed data could not be extracted.";
+  }
+
+  const { type, labels, datasets } = chartData;
+  let description =
+    selectedLanguage === "vi-VN"
+      ? `Đây là biểu đồ ${type}. `
+      : `This is a ${type} chart. `;
+
+  description +=
+    selectedLanguage === "vi-VN"
+      ? "Nó có các nhãn: "
+      : "It has the following labels: ";
+  description += labels.join(", ") + ". ";
+
+  datasets.forEach((dataset, index) => {
+    description +=
+      selectedLanguage === "vi-VN"
+        ? `Bộ dữ liệu ${index + 1} (${dataset.label || "không có nhãn"}): `
+        : `Dataset ${index + 1} (${dataset.label || "no label"}): `;
+    dataset.data.forEach((value, i) => {
+      if (labels[i]) {
+        description += `${labels[i]}: ${value}${
+          i < dataset.data.length - 1 ? ", " : ". "
+        }`;
+      }
+    });
+  });
+
+  return description;
+}
+
+// Function to describe a screenshot using OpenAI API
 async function describeScreenshot(boundingRect, sender) {
   try {
+    // Check if the API key is available
+    if (!openaiApiKey) {
+      console.error("No OpenAI API key available. Please set it in the popup.");
+      return selectedLanguage === "vi-VN"
+        ? "Không có khóa API OpenAI. Vui lòng thiết lập trong popup."
+        : "No OpenAI API key available. Please set it in the popup.";
+    }
+
     console.log("Capturing screenshot with bounding rect:", boundingRect);
 
     // Capture the visible tab
@@ -135,74 +191,73 @@ async function describeScreenshot(boundingRect, sender) {
     });
     console.log("Cropped screenshot to base64, length:", croppedBase64.length);
 
-    // Send the cropped screenshot to Google Cloud Vision API
+    // Send the cropped screenshot to OpenAI API
     const requestBody = {
-      requests: [
+      model: "gpt-4o-mini", // Using gpt-4o as per previous update
+      messages: [
         {
-          image: { content: croppedBase64 },
-          features: [
-            { type: "LABEL_DETECTION", maxResults: 10 },
-            { type: "WEB_DETECTION", maxResults: 5 },
-            { type: "TEXT_DETECTION", maxResults: 10 },
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "describe this picture",
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:image/jpeg;base64,${croppedBase64}`,
+              },
+            },
           ],
         },
       ],
+      max_tokens: 300,
     };
 
-    const response = await fetch(
-      `https://vision.googleapis.com/v1/images:annotate?key=${GOOGLE_VISION_API_KEY}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(requestBody),
-      }
-    );
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${openaiApiKey}`, // Use the stored API key
+      },
+      body: JSON.stringify(requestBody),
+    });
 
     if (!response.ok) {
       console.error(
-        "API request failed:",
+        "OpenAI API request failed:",
         response.status,
         response.statusText
       );
       const errorText = await response.text();
-      console.error("Error response:", errorText);
-      throw new Error("API request failed");
+      console.error("OpenAI error response:", errorText);
+      throw new Error("OpenAI API request failed");
     }
 
     const data = await response.json();
-    console.log("API response:", data);
+    console.log("OpenAI API response:", data);
 
     let description = "";
-    if (data.responses && data.responses[0].labelAnnotations) {
-      const labels = data.responses[0].labelAnnotations
-        .map((label) => label.description)
-        .join(", ");
-      description += `This area contains: ${labels}. `;
-    }
-    if (data.responses && data.responses[0].webDetection) {
-      const webEntities = data.responses[0].webDetection.webEntities
-        .filter((entity) => entity.description)
-        .map((entity) => entity.description)
-        .join(", ");
-      if (webEntities) {
-        description += `Web context: ${webEntities}. `;
-      }
-    }
-    if (data.responses && data.responses[0].textAnnotations) {
-      const text = data.responses[0].textAnnotations[0].description;
-      if (text) {
-        description += `Text in the area: ${text}.`;
-      }
+    if (
+      data.choices &&
+      data.choices[0] &&
+      data.choices[0].message &&
+      data.choices[0].message.content
+    ) {
+      description = data.choices[0].message.content;
+    } else {
+      console.error("No description returned from OpenAI:", data);
+      description =
+        selectedLanguage === "vi-VN"
+          ? "Không thể mô tả khu vực này."
+          : "Unable to describe this area.";
     }
 
-    const finalDescription = description || "Unable to describe this area.";
-    console.log("Original description (English):", finalDescription);
+    console.log("Original description (English):", description);
 
     // Translate the description if the selected language is Vietnamese
     const translatedDescription = await translateText(
-      finalDescription,
+      description,
       selectedLanguage
     );
     console.log("Translated description:", translatedDescription);
@@ -216,11 +271,13 @@ async function describeScreenshot(boundingRect, sender) {
   }
 }
 
-function describeChartOrTable(elementType, elementData) {
+function describeChartOrTable(elementType, elementData, chartData) {
   if (elementType === "Table" && elementData) {
     let description = selectedLanguage === "vi-VN" ? "Bảng: " : "Table: ";
     description += elementData.map((row) => row.join(", ")).join("; ");
     return description;
+  } else if (elementType === "Canvas (Chart)" && chartData) {
+    return describeChartWithData(chartData);
   }
   return selectedLanguage === "vi-VN"
     ? "Đây là biểu đồ hoặc bảng. Mô tả chi tiết chưa có sẵn."
@@ -229,7 +286,7 @@ function describeChartOrTable(elementType, elementData) {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === "describeElement") {
-    const { elementType, boundingRect, elementData } = message;
+    const { elementType, boundingRect, elementData, chartData } = message;
 
     // Set a timeout to ensure the response is sent within a reasonable time
     const timeout = setTimeout(() => {
@@ -248,25 +305,44 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       ) &&
       boundingRect
     ) {
-      describeScreenshot(boundingRect, sender)
-        .then((description) => {
-          clearTimeout(timeout);
-          sendResponse({ description: description });
-        })
-        .catch((error) => {
-          clearTimeout(timeout);
-          console.error("Error in describeScreenshot:", error);
-          sendResponse({
-            description:
-              selectedLanguage === "vi-VN"
-                ? "Lỗi khi mô tả khu vực: " + error.message
-                : "Error describing the area: " + error.message,
+      // If chart data is available, use it; otherwise, fall back to screenshot description
+      if (elementType === "Canvas (Chart)" && chartData) {
+        const description = describeChartWithData(chartData);
+        clearTimeout(timeout);
+        translateText(description, selectedLanguage).then(
+          (translatedDescription) => {
+            sendResponse({ description: translatedDescription });
+          }
+        );
+      } else {
+        describeScreenshot(boundingRect, sender)
+          .then((description) => {
+            clearTimeout(timeout);
+            sendResponse({ description: description });
+          })
+          .catch((error) => {
+            clearTimeout(timeout);
+            console.error("Error in describeScreenshot:", error);
+            sendResponse({
+              description:
+                selectedLanguage === "vi-VN"
+                  ? "Lỗi khi mô tả khu vực: " + error.message
+                  : "Error describing the area: " + error.message,
+            });
           });
-        });
+      }
     } else {
       clearTimeout(timeout);
-      const description = describeChartOrTable(elementType, elementData);
-      sendResponse({ description: description });
+      const description = describeChartOrTable(
+        elementType,
+        elementData,
+        chartData
+      );
+      translateText(description, selectedLanguage).then(
+        (translatedDescription) => {
+          sendResponse({ description: translatedDescription });
+        }
+      );
     }
 
     return true; // Indicate asynchronous response
@@ -275,5 +351,36 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     selectedLanguage = message.language;
     console.log("Background script updated language to:", selectedLanguage);
     sendResponse({ status: "Language updated" });
+  } else if (message.action === "updateApiKey") {
+    // Update the API key when it changes in popup.js
+    openaiApiKey = message.apiKey;
+    console.log("Background script updated OpenAI API key.");
+    sendResponse({ status: "API key updated" });
+  } else if (message.action === "executeScript") {
+    // Execute a script in the context of the active tab
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]) {
+        chrome.scripting.executeScript(
+          {
+            target: { tabId: tabs[0].id },
+            func: message.func,
+          },
+          (results) => {
+            if (chrome.runtime.lastError) {
+              console.error(
+                "Error executing script:",
+                chrome.runtime.lastError
+              );
+              sendResponse({ error: chrome.runtime.lastError.message });
+            } else {
+              sendResponse({ data: results[0].result });
+            }
+          }
+        );
+      } else {
+        sendResponse({ error: "No active tab found" });
+      }
+    });
+    return true; // Indicate asynchronous response
   }
 });

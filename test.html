@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Trang Web Ngẫu Nhiên - Nhiều Nội Dung</title>
+    <title>Trang Web Ngẫu Nhiên - Có Biểu Đồ</title>
     <style>
       body {
         font-family: Arial, sans-serif;
@@ -55,6 +55,10 @@
       th {
         background-color: #f2f2f2;
       }
+      canvas {
+        max-width: 100%;
+        margin: 20px 0;
+      }
     </style>
   </head>
   <body>
@@ -83,6 +87,9 @@
         src="https://static.wikia.nocookie.net/dqw4w9wgxcq/images/0/08/Site-background-dark/revision/latest/scale-to-width-down/1400?cb=20220428173233"
         alt="Hình ảnh giả lập"
       />
+
+      <h2>Biểu đồ ngẫu nhiên: Điểm số hàng tuần</h2>
+      <canvas id="myChart"></canvas>
 
       <h2>Bảng dữ liệu mẫu</h2>
       <table>
@@ -119,5 +126,58 @@
         gì nữa, cứ nói nhé!
       </p>
     </div>
+
+    <!-- Thêm thư viện Chart.js từ CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+      // Cấu hình biểu đồ
+      const ctx = document.getElementById("myChart").getContext("2d");
+      const myChart = new Chart(ctx, {
+        type: "bar", // Loại biểu đồ: cột
+        data: {
+          labels: [
+            "Thứ 2",
+            "Thứ 3",
+            "Thứ 4",
+            "Thứ 5",
+            "Thứ 6",
+            "Thứ 7",
+            "Chủ nhật",
+          ],
+          datasets: [
+            {
+              label: "Điểm số",
+              data: [12, 19, 3, 5, 2, 15, 10], // Dữ liệu ngẫu nhiên
+              backgroundColor: [
+                "rgba(255, 99, 132, 0.7)",
+                "rgba(54, 162, 235, 0.7)",
+                "rgba(255, 206, 86, 0.7)",
+                "rgba(75, 192, 192, 0.7)",
+                "rgba(153, 102, 255, 0.7)",
+                "rgba(255, 159, 64, 0.7)",
+                "rgba(199, 199, 199, 0.7)",
+              ],
+              borderColor: [
+                "rgba(255, 99, 132, 1)",
+                "rgba(54, 162, 235, 1)",
+                "rgba(255, 206, 86, 1)",
+                "rgba(75, 192, 192, 1)",
+                "rgba(153, 102, 255, 1)",
+                "rgba(255, 159, 64, 1)",
+                "rgba(199, 199, 199, 1)",
+              ],
+              borderWidth: 1,
+            },
+          ],
+        },
+        options: {
+          scales: {
+            y: {
+              beginAtZero: true,
+            },
+          },
+        },
+      });
+    </script>
   </body>
 </html>
