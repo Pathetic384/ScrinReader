@@ -134,8 +134,8 @@ async function simplifyHTML(html, language) {
   try {
     const prompt =
       language === "vi-VN"
-        ? 'Hãy đơn giản hóa HTML này để dễ đọc hơn cho người khiếm thị. Giữ lại nội dung chính, hình ảnh, biểu đồ và bảng.  Mỗi phần thông tin nên nằm trên một dòng riêng. Loại bỏ quảng cáo, logo và các yếu tố không cần thiết khác.  Đảm bảo tất cả hình ảnh có style="max-width:100%;height:auto".  Giữ nguyên tất cả canvas và thêm thuộc tính data-original-src nếu có.  Chỉ trả về HTML đã được tối ưu hóa, không có markdown code blocks (```html) và không có giải thích nào khác.'
-        : 'Simplify this HTML for better screen reader accessibility.  Keep main content, images, charts and tables.   Place each information piece on its own line.  Remove ads, logos and other non-essential elements.   Ensure all images have style="max-width:100%;height:auto". Preserve all canvas elements and add data-original-src attribute if available.  Return only the optimized HTML with no markdown code blocks (```html) and no other explanations.';
+        ? `Hãy đơn giản hóa HTML này với các yêu cầu sau: 1. Giữ nguyên tất cả thẻ <canvas>, <table>, <button>, <h1>-<h6>, <p> và các hình ảnh 2. Không thêm bất kỳ ký tự hay comment nào ngoài HTML 3. Loại bỏ quảng cáo và các yếu tố không cần thiết 4. Đảm bảo không có dấu "'''" hoặc markdown trong kết quả 5. Giữ nguyên tất cả nội dung trong bảng Chỉ trả về HTML thuần túy, không có giải thích`
+        : `Simplify this HTML with these requirements: 1. Preserve all <canvas>, <table>, <button>, <h1>-<h6>, <p> and images tags 2. Don't add any extra characters or comments  3. Remove ads and unnecessary elements 4. Ensure no "'''" or markdown appears in results 5. Keep all table content intact  Return only pure HTML, no explanations`;
 
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`,
@@ -158,8 +158,14 @@ async function simplifyHTML(html, language) {
         ?.map((part) => part.text)
         .join(" ") || html;
 
-    // Remove any remaining markdown code blocks
-    simplifiedHTML = simplifiedHTML.replace(/^```html|```$/g, "").trim();
+    // Clean any markdown artifacts
+    simplifiedHTML = simplifiedHTML.replace(/```html|```/g, "").trim();
+
+    // Verify required elements are present
+    const requiredTags = ["<table", "<canvas", "<button"];
+    if (!requiredTags.every((tag) => simplifiedHTML.includes(tag))) {
+      return { simplifiedHTML: html }; // Fallback to original if missing critical elements
+    }
 
     return { simplifiedHTML };
   } catch (error) {
