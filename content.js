@@ -6,6 +6,111 @@ let currentIndex = -1;
 let isHighlighting = false;
 let selectedLanguage = "en-US";
 
+let originalHTML = null;
+let isSimplified = false;
+
+function restorePage() {
+  if (originalHTML) {
+    // Create a new document and write to it first
+    const newDoc = document.implementation.createHTMLDocument();
+    newDoc.write(originalHTML);
+
+    // Replace the entire document
+    document.documentElement.innerHTML = newDoc.documentElement.innerHTML;
+
+    isSimplified = false;
+
+    // Reinitialize elements after restoration
+    if (isHighlighting) {
+      elements = getFocusableElements();
+      currentIndex = -1;
+      moveToNextElement();
+    }
+
+    const message =
+      selectedLanguage === "vi-VN"
+        ? "Đã khôi phục trang gốc"
+        : "Original page restored";
+    narrateText(message);
+  }
+}
+
+async function simplifyPage() {
+  try {
+    const loadingMessage =
+      selectedLanguage === "vi-VN"
+        ? "Đang đơn giản hóa trang, vui lòng chờ..."
+        : "Simplifying page, please wait...";
+    narrateText(loadingMessage);
+
+    // Save original HTML
+    originalHTML = document.documentElement.outerHTML;
+
+    const response = await chrome.runtime.sendMessage({
+      action: "simplifyHTML",
+      html: originalHTML,
+      language: selectedLanguage,
+    });
+
+    if (response?.simplifiedHTML) {
+      // Clean the AI response first
+      let cleanHTML = response.simplifiedHTML;
+
+      // Remove markdown code blocks if present
+      cleanHTML = cleanHTML.replace(/^```html|```$/g, "").trim();
+
+      // Create a new document to write to
+      const newDoc = document.implementation.createHTMLDocument();
+      newDoc.write(cleanHTML);
+
+      // Replace the current document
+      document.documentElement.innerHTML = newDoc.documentElement.innerHTML;
+
+      // Fix image sizes
+      document.querySelectorAll("img").forEach((img) => {
+        img.style.maxWidth = "100%";
+        img.style.height = "auto";
+      });
+
+      // Fix canvas elements
+      document.querySelectorAll("canvas").forEach((canvas) => {
+        if (!canvas.hasAttribute("data-original-src")) {
+          // Try to preserve canvas content
+          const wrapper = document.createElement("div");
+          wrapper.innerHTML = `<p>${
+            selectedLanguage === "vi-VN"
+              ? "Biểu đồ hoặc đồ họa"
+              : "Chart or graphic"
+          }</p>`;
+          canvas.parentNode?.replaceChild(wrapper, canvas);
+        }
+      });
+
+      isSimplified = true;
+
+      // Reinitialize elements after simplification
+      if (isHighlighting) {
+        elements = getFocusableElements();
+        currentIndex = -1;
+        moveToNextElement();
+      }
+
+      const successMessage =
+        selectedLanguage === "vi-VN"
+          ? "Trang đã được đơn giản hóa"
+          : "Page has been simplified";
+      narrateText(successMessage);
+    }
+  } catch (error) {
+    console.error("Error simplifying page:", error);
+    const errorMessage =
+      selectedLanguage === "vi-VN"
+        ? "Lỗi khi đơn giản hóa trang"
+        : "Error simplifying page";
+    narrateText(errorMessage);
+  }
+}
+
 function getFocusableElements() {
   const selectors = [
     "p",
@@ -114,6 +219,15 @@ function getNarrationContent(element) {
     return `${getElementType(element)}: ${element.value || langLabels.empty}`;
   } else if (tagName === "a") {
     return `${langLabels.link}: ${element.textContent || langLabels.noText}`;
+  }
+  if (tagName === "canvas") {
+    // Check if it's a chart canvas
+    if (element.getAttribute("data-original-src")) {
+      return `${langLabels.chart}: ${element.getAttribute(
+        "data-original-src"
+      )}`;
+    }
+    return langLabels.chart;
   } else {
     return element.textContent.trim() || "No readable content";
   }
@@ -227,6 +341,15 @@ function describeAndNarrateElement(element) {
         cell.textContent.trim()
       )
     );
+  }
+  if (element.tagName.toLowerCase() === "canvas") {
+    const description =
+      element.getAttribute("alt") ||
+      element.getAttribute("aria-label") ||
+      element.getAttribute("data-original-src") ||
+      (selectedLanguage === "vi-VN" ? "Phần tử đồ họa" : "Graphic element");
+    narrateText(description);
+    return;
   }
 
   // Ensure the element is in view
@@ -452,6 +575,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ error: error.message });
       });
     return true; // Indicate asynchronous response
+  } else if (message.action === "toggleSimplify") {
+    console.log(`Simplify toggle: ${message.simplify}`);
+    chrome.storage.sync.set({ simplify: message.simplify }, () => {
+      console.log(`Saved simplify state: ${message.simplify}`);
+    });
+
+    if (message.simplify) {
+      simplifyPage();
+    } else {
+      restorePage();
+    }
+    sendResponse({ status: "Simplify toggled" });
   }
 });
 

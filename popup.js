@@ -83,3 +83,26 @@ document.addEventListener("keydown", (event) => {
     });
   }
 });
+document
+  .getElementById("simplifyToggle")
+  .addEventListener("change", (event) => {
+    const simplify = event.target.checked;
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      chrome.tabs.sendMessage(
+        tabs[0].id,
+        { action: "toggleSimplify", simplify },
+        (response) => {
+          console.log("Response from content script:", response);
+        }
+      );
+    });
+  });
+
+// Update the storage get to include simplify state
+chrome.storage.sync.get(["language", "simplify"], (result) => {
+  const language = result.language || "en-US";
+  document.getElementById("language").value = language;
+  if (result.simplify) {
+    document.getElementById("simplifyToggle").checked = result.simplify;
+  }
+});
