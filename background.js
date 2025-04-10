@@ -127,6 +127,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ summary: message.text });
       });
     return true;
+    // Add this to the message listener in background.js
+  } else if (message.action === "describeArea") {
+    describeScreenshot(message.boundingRect, sender)
+      .then((description) => {
+        // Ensure we're sending back an object with a description property
+        sendResponse({ description: description });
+      })
+      .catch((error) => {
+        console.error("Error describing area:", error);
+        sendResponse({
+          description:
+            selectedLanguage === "vi-VN"
+              ? "Lỗi: " + error.message
+              : "Error: " + error.message,
+        });
+      });
+    return true; // Important: This indicates we'll respond asynchronously
   }
 });
 

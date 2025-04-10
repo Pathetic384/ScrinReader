@@ -106,3 +106,15 @@ chrome.storage.sync.get(["language", "simplify"], (result) => {
     document.getElementById("simplifyToggle").checked = result.simplify;
   }
 });
+document.getElementById("captureArea").addEventListener("click", () => {
+  console.log("Capture Area button clicked!"); // Check if this logs
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    chrome.tabs.sendMessage(
+      tabs[0].id,
+      { action: "startAreaCapture" },
+      (response) => {
+        console.log("Response from content script:", response);
+      }
+    );
+  });
+});

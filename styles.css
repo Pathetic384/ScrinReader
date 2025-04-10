@@ -90,3 +90,11 @@ input:checked + .slider {
 input:checked + .slider:before {
   transform: translateX(26px);
 }
+/* Add this to styles.css */
+#captureArea {
+  background-color: #2196f3;
+}
+
+#captureArea:hover {
+  background-color: #0b7dda;
+}

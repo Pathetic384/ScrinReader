@@ -1,6 +1,167 @@
 // content.js
 console.log("Screen Reader Extension: Content script loaded on this page!");
 
+// Add these new functions to content.js
+let isAreaCaptureMode = false;
+let captureStartX = 0;
+let captureStartY = 0;
+let captureOverlay = null;
+let captureSelection = null;
+
+function createCaptureOverlay() {
+  // Remove existing overlay if any
+  if (captureOverlay) {
+    document.body.removeChild(captureOverlay);
+  }
+
+  // Create overlay div
+  captureOverlay = document.createElement("div");
+  captureOverlay.style.position = "fixed";
+  captureOverlay.style.top = "0";
+  captureOverlay.style.left = "0";
+  captureOverlay.style.width = "100%";
+  captureOverlay.style.height = "100%";
+  captureOverlay.style.backgroundColor = "rgba(0, 0, 0, 0.5)";
+  captureOverlay.style.zIndex = "999999";
+  captureOverlay.style.cursor = "crosshair";
+
+  // Create selection rectangle
+  captureSelection = document.createElement("div");
+  captureSelection.style.position = "absolute";
+  captureSelection.style.border = "2px dashed yellow";
+  captureSelection.style.backgroundColor = "rgba(255, 255, 0, 0.2)";
+  captureSelection.style.display = "none";
+  captureOverlay.appendChild(captureSelection);
+
+  // Add overlay to body
+  document.body.appendChild(captureOverlay);
+
+  // Add event listeners
+  captureOverlay.addEventListener("mousedown", startAreaSelection);
+  captureOverlay.addEventListener("mousemove", updateAreaSelection);
+  captureOverlay.addEventListener("mouseup", endAreaSelection);
+  captureOverlay.addEventListener("keydown", handleCaptureKeyDown);
+
+  // Focus the overlay to capture keyboard events
+  captureOverlay.tabIndex = -1;
+  captureOverlay.focus();
+}
+
+function startAreaSelection(e) {
+  if (!isAreaCaptureMode) return;
+
+  captureStartX = e.clientX;
+  captureStartY = e.clientY;
+
+  captureSelection.style.left = `${captureStartX}px`;
+  captureSelection.style.top = `${captureStartY}px`;
+  captureSelection.style.width = "0";
+  captureSelection.style.height = "0";
+  captureSelection.style.display = "block";
+}
+
+function updateAreaSelection(e) {
+  if (!isAreaCaptureMode || captureSelection.style.display !== "block") return;
+
+  const currentX = e.clientX;
+  const currentY = e.clientY;
+
+  const left = Math.min(captureStartX, currentX);
+  const top = Math.min(captureStartY, currentY);
+  const width = Math.abs(currentX - captureStartX);
+  const height = Math.abs(currentY - captureStartY);
+
+  captureSelection.style.left = `${left}px`;
+  captureSelection.style.top = `${top}px`;
+  captureSelection.style.width = `${width}px`;
+  captureSelection.style.height = `${height}px`;
+}
+
+async function endAreaSelection(e) {
+  if (!isAreaCaptureMode || captureSelection.style.display !== "block") return;
+
+  const currentX = e.clientX;
+  const currentY = e.clientY;
+
+  const left = Math.min(captureStartX, currentX);
+  const top = Math.min(captureStartY, currentY);
+  const width = Math.abs(currentX - captureStartX);
+  const height = Math.abs(currentY - captureStartY);
+
+  // Clean up
+  document.body.removeChild(captureOverlay);
+  captureOverlay = null;
+  captureSelection = null;
+  isAreaCaptureMode = false;
+
+  // Only proceed if selection is large enough
+  if (width < 10 || height < 10) {
+    const message =
+      selectedLanguage === "vi-VN"
+        ? "Vùng chọn quá nhỏ. Vui lòng chọn một vùng lớn hơn."
+        : "Selection too small. Please select a larger area.";
+    narrateText(message);
+    return;
+  }
+
+  const boundingRect = {
+    x: left + window.scrollX,
+    y: top + window.scrollY,
+    width,
+    height,
+  };
+
+  const loadingMessage =
+    selectedLanguage === "vi-VN"
+      ? "Đang tải mô tả, vui lòng chờ..."
+      : "Loading description, please wait...";
+  narrateText(loadingMessage);
+
+  try {
+    const response = await chrome.runtime.sendMessage({
+      action: "describeArea",
+      boundingRect: boundingRect,
+    });
+
+    // Extract the description from the response object
+    const description =
+      response?.description ||
+      (selectedLanguage === "vi-VN"
+        ? "Không nhận được mô tả từ API"
+        : "No description received from API");
+
+    narrateText(description);
+  } catch (error) {
+    console.error("Error describing area:", error);
+    const errorMessage =
+      selectedLanguage === "vi-VN"
+        ? "Lỗi khi mô tả khu vực. Vui lòng thử lại sau."
+        : "Error describing the area. Please try again later.";
+    narrateText(errorMessage);
+  }
+}
+
+function handleCaptureKeyDown(e) {
+  if (e.key === "Escape") {
+    cancelAreaCapture();
+  }
+}
+
+function cancelAreaCapture() {
+  if (captureOverlay) {
+    document.body.removeChild(captureOverlay);
+    captureOverlay = null;
+    captureSelection = null;
+  }
+  isAreaCaptureMode = false;
+
+  const message =
+    selectedLanguage === "vi-VN"
+      ? "Đã hủy chế độ chụp ảnh"
+      : "Area capture cancelled";
+  narrateText(message);
+}
+
 let elements = [];
 let currentIndex = -1;
 let isHighlighting = false;
@@ -592,6 +753,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ simplifiedHTML: html });
       });
     return true; // Indicate async response
+  } else if (message.action === "startAreaCapture") {
+    console.log("Starting area capture mode...");
+    isAreaCaptureMode = true;
+    createCaptureOverlay();
+    const message =
+      selectedLanguage === "vi-VN"
+        ? "Chế độ chụp ảnh đã bật. Kéo để chọn vùng bạn muốn mô tả. Nhấn ESC để hủy."
+        : "Area capture mode enabled. Drag to select the area you want to describe. Press ESC to cancel.";
+    narrateText(message);
+    sendResponse({ status: "Area capture started" });
   }
 });
 
