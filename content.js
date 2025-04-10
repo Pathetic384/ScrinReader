@@ -332,7 +332,7 @@ function getElementType(element) {
     case "svg":
       return "SVG Graphic";
     case "canvas":
-      return "Canvas (Chart)";
+      return "Canvas (Chart)"; // Changed from just "Chart"
     case "table":
       return "Table";
     default:
@@ -367,21 +367,9 @@ function getNarrationContent(element) {
     return `${getElementType(element)}: ${element.value || langLabels.empty}`;
   } else if (tagName === "a") {
     return `${langLabels.link}: ${element.textContent || langLabels.noText}`;
-  }
-  if (tagName === "canvas") {
-    const ariaLabel = element.getAttribute("aria-label");
-    if (ariaLabel) return ariaLabel;
-
-    const title =
-      element.closest("[aria-labelledby]")?.textContent ||
-      element.closest("figure")?.querySelector("figcaption")?.textContent;
-
-    return (
-      title ||
-      (selectedLanguage === "vi-VN"
-        ? "Biểu đồ không có mô tả"
-        : "Chart with no description")
-    );
+  } else if (tagName === "canvas") {
+    // Return empty string to trigger describeAndNarrateElement
+    return "";
   } else {
     return element.textContent.trim() || "No readable content";
   }
@@ -496,16 +484,19 @@ function describeAndNarrateElement(element) {
       )
     );
   }
+
+  // Special handling for canvas elements
   if (element.tagName.toLowerCase() === "canvas") {
-    // Get the most complete description available
+    // First try to get accessible description
     const description =
       element.getAttribute("aria-label") ||
       element.closest("[aria-labelledby]")?.textContent ||
-      element.closest("figure")?.querySelector("figcaption")?.textContent ||
-      (selectedLanguage === "vi-VN" ? "Biểu đồ" : "Chart");
+      element.closest("figure")?.querySelector("figcaption")?.textContent;
 
-    narrateText(description);
-    return;
+    if (description) {
+      narrateText(description);
+      return;
+    }
   }
 
   // Ensure the element is in view
@@ -515,15 +506,12 @@ function describeAndNarrateElement(element) {
   setTimeout(() => {
     const rect = element.getBoundingClientRect();
     const boundingRect = {
-      x: rect.left, // Relative to the viewport, not the document
-      y: rect.top, // Relative to the viewport, not the document
+      x: rect.left,
+      y: rect.top,
       width: rect.width,
       height: rect.height,
     };
-    console.log(
-      "Element bounding rectangle (viewport relative):",
-      boundingRect
-    );
+    console.log("Element bounding rectangle:", boundingRect);
 
     const loadingMessage =
       selectedLanguage === "vi-VN"
@@ -564,11 +552,14 @@ function describeAndNarrateElement(element) {
 
         console.log("Received response from background.js:", response);
         const description =
-          response.description || "Unable to describe this element.";
+          response.description ||
+          (selectedLanguage === "vi-VN"
+            ? "Không thể mô tả phần tử này"
+            : "Unable to describe this element");
         narrateText(description);
       }
     );
-  }, 500); // 500ms delay to ensure scroll is complete
+  }, 500);
 }
 
 function narrateElement(element) {
@@ -580,14 +571,18 @@ function narrateElement(element) {
     elementType: elementType,
   });
 
+  // Always describe canvas elements (charts) using the AI
   if (
     ["Image", "SVG Graphic", "Canvas (Chart)", "Table"].includes(elementType)
   ) {
     describeAndNarrateElement(element);
   } else {
     const content = getNarrationContent(element);
-    if (content !== "No readable content") {
+    if (content && content !== "No readable content") {
       narrateText(content);
+    } else if (elementType === "Canvas (Chart)") {
+      // Fallback for canvas elements
+      describeAndNarrateElement(element);
     }
   }
 }
