@@ -11,73 +11,8 @@ let isSimplified = false;
 
 function restorePage() {
   if (originalHTML) {
-    // Create a new document and write to it first
-    const newDoc = document.implementation.createHTMLDocument();
-    newDoc.write(originalHTML);
-
-    // Replace the entire document
-    document.documentElement.innerHTML = newDoc.documentElement.innerHTML;
-
-    // Reinitialize any interactive elements
-    const button = document.querySelector("button");
-    if (button) {
-      button.onclick = () =>
-        alert(
-          selectedLanguage === "vi-VN"
-            ? "Bạn thật tuyệt vời khi đọc đến đây!"
-            : "You're awesome for reading this far!"
-        );
-    }
-
-    // Reinitialize chart if it exists
-    const canvas = document.getElementById("myChart");
-    if (canvas && typeof Chart !== "undefined") {
-      new Chart(canvas.getContext("2d"), {
-        type: "bar",
-        data: {
-          labels: [
-            "Thứ 2",
-            "Thứ 3",
-            "Thứ 4",
-            "Thứ 5",
-            "Thứ 6",
-            "Thứ 7",
-            "Chủ nhật",
-          ],
-          datasets: [
-            {
-              label: selectedLanguage === "vi-VN" ? "Điểm số" : "Scores",
-              data: [12, 19, 3, 5, 2, 15, 1],
-              backgroundColor: [
-                "rgba(255, 99, 132, 0.7)",
-                "rgba(54, 162, 235, 0.7)",
-                "rgba(255, 206, 86, 0.7)",
-                "rgba(75, 192, 192, 0.7)",
-                "rgba(153, 102, 255, 0.7)",
-                "rgba(255, 159, 64, 0.7)",
-                "rgba(199, 199, 199, 0.7)",
-              ],
-              borderWidth: 1,
-            },
-          ],
-        },
-        options: {
-          scales: {
-            y: {
-              beginAtZero: true,
-            },
-          },
-        },
-      });
-    }
-
+    document.documentElement.innerHTML = originalHTML;
     isSimplified = false;
-
-    if (isHighlighting) {
-      elements = getFocusableElements();
-      currentIndex = -1;
-      moveToNextElement();
-    }
 
     const message =
       selectedLanguage === "vi-VN"
@@ -98,60 +33,43 @@ async function simplifyPage() {
     // Save original HTML
     originalHTML = document.documentElement.outerHTML;
 
-    // Preserve canvas states
-    const canvasStates = {};
-    document.querySelectorAll("canvas").forEach((canvas) => {
-      canvasStates[canvas.id] = canvas.toDataURL();
-    });
+    // Get page text content (remove scripts, styles, etc.)
+    const pageText = document.body.innerText;
+    const pageUrl = window.location.href;
 
     const response = await chrome.runtime.sendMessage({
-      action: "simplifyHTML",
-      html: originalHTML,
+      action: "summarizePage",
+      text: pageText,
+      url: pageUrl,
       language: selectedLanguage,
     });
 
-    if (response?.simplifiedHTML) {
-      // Clean the HTML before writing
-      let cleanHTML = response.simplifiedHTML;
+    if (response?.summary) {
+      // Create simplified view container
+      const simplifiedView = document.createElement("div");
+      simplifiedView.id = "simplified-view";
+      simplifiedView.style.padding = "20px";
+      simplifiedView.style.maxWidth = "800px";
+      simplifiedView.style.margin = "0 auto";
+      simplifiedView.style.fontFamily = "Arial, sans-serif";
+      simplifiedView.style.lineHeight = "1.6";
 
-      // Remove any remaining markdown artifacts
-      cleanHTML = cleanHTML.replace(/```html|```/g, "");
+      // Add heading
+      const heading = document.createElement("h1");
+      heading.textContent =
+        selectedLanguage === "vi-VN" ? "Bản tóm tắt trang" : "Page Summary";
+      simplifiedView.appendChild(heading);
 
-      // Create new document
-      const newDoc = document.implementation.createHTMLDocument();
-      newDoc.write(cleanHTML);
+      // Add summary content
+      const content = document.createElement("div");
+      content.innerHTML = response.summary;
+      simplifiedView.appendChild(content);
 
-      // Verify critical content exists
-      const hasTable = newDoc.querySelector("table");
-      const hasCanvas = newDoc.querySelector("canvas");
-      const hasButton = newDoc.querySelector("button");
-
-      if (!hasTable || !hasCanvas || !hasButton) {
-        throw new Error("Critical elements missing in simplified version");
-      }
-
-      // Replace current document
-      document.documentElement.innerHTML = newDoc.documentElement.innerHTML;
-
-      // Restore canvas visuals
-      Object.entries(canvasStates).forEach(([id, dataURL]) => {
-        const canvas = document.getElementById(id);
-        if (canvas) {
-          const img = new Image();
-          img.onload = () => {
-            canvas.getContext("2d").drawImage(img, 0, 0);
-          };
-          img.src = dataURL;
-        }
-      });
+      // Replace page content
+      document.body.innerHTML = "";
+      document.body.appendChild(simplifiedView);
 
       isSimplified = true;
-
-      if (isHighlighting) {
-        elements = getFocusableElements();
-        currentIndex = -1;
-        moveToNextElement();
-      }
 
       const successMessage =
         selectedLanguage === "vi-VN"
@@ -166,11 +84,6 @@ async function simplifyPage() {
         ? "Lỗi khi đơn giản hóa trang"
         : "Error simplifying page";
     narrateText(errorMessage);
-
-    // Restore original if simplification failed
-    if (originalHTML) {
-      document.documentElement.innerHTML = originalHTML;
-    }
   }
 }
 

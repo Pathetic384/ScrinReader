@@ -119,23 +119,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   } else if (message.action === "updateLanguage") {
     selectedLanguage = message.language;
     sendResponse({ status: "Language updated" });
-  } else if (message.action === "simplifyHTML") {
-    simplifyHTML(message.html, message.language)
+  } else if (message.action === "summarizePage") {
+    summarizePage(message.text, message.url, message.language)
       .then((result) => sendResponse(result))
       .catch((error) => {
         console.error("Error:", error);
-        sendResponse({ simplifiedHTML: message.html }); // Fallback to original
+        sendResponse({ summary: message.text });
       });
-    return true; // Indicate async response
+    return true;
   }
 });
 
-async function simplifyHTML(html, language) {
+async function summarizePage(text, url, language) {
   try {
     const prompt =
       language === "vi-VN"
-        ? `Hãy đơn giản hóa HTML này với các yêu cầu sau: 1. Giữ nguyên tất cả thẻ <canvas>, <table>, <button>, <h1>-<h6>, <p> và các hình ảnh 2. Không thêm bất kỳ ký tự hay comment nào ngoài HTML 3. Loại bỏ quảng cáo và các yếu tố không cần thiết 4. Đảm bảo không có dấu "'''" hoặc markdown trong kết quả 5. Giữ nguyên tất cả nội dung trong bảng Chỉ trả về HTML thuần túy, không có giải thích`
-        : `Simplify this HTML with these requirements: 1. Preserve all <canvas>, <table>, <button>, <h1>-<h6>, <p> and images tags 2. Don't add any extra characters or comments  3. Remove ads and unnecessary elements 4. Ensure no "'''" or markdown appears in results 5. Keep all table content intact  Return only pure HTML, no explanations`;
+        ? `Hãy tóm tắt nội dung chính của trang web này thành các điểm chính. Mỗi điểm nên là một dòng riêng biệt. Giữ lại:
+         - Tiêu đề chính
+         - Các mục quan trọng
+         - Dữ liệu bảng (nếu có)
+         - Liên kết quan trọng
+         Bỏ qua quảng cáo và các yếu tố không cần thiết. Trả về kết quả dưới dạng HTML đơn giản.`
+        : `Summarize the main content of this web page into key points. Each point should be a separate line. Keep:
+         - Main headings
+         - Important items
+         - Table data (if any)
+         - Important links
+         Skip ads and non-essential elements. Return result as simple HTML.`;
 
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`,
@@ -145,7 +155,10 @@ async function simplifyHTML(html, language) {
         body: JSON.stringify({
           contents: [
             {
-              parts: [{ text: prompt }, { text: html }],
+              parts: [
+                { text: prompt },
+                { text: `Page URL: ${url}\n\nPage Content:\n${text}` },
+              ],
             },
           ],
         }),
@@ -153,23 +166,14 @@ async function simplifyHTML(html, language) {
     );
 
     const data = await response.json();
-    let simplifiedHTML =
+    const summary =
       data.candidates?.[0]?.content?.parts
         ?.map((part) => part.text)
-        .join(" ") || html;
+        .join(" ") || text;
 
-    // Clean any markdown artifacts
-    simplifiedHTML = simplifiedHTML.replace(/```html|```/g, "").trim();
-
-    // Verify required elements are present
-    const requiredTags = ["<table", "<canvas", "<button"];
-    if (!requiredTags.every((tag) => simplifiedHTML.includes(tag))) {
-      return { simplifiedHTML: html }; // Fallback to original if missing critical elements
-    }
-
-    return { simplifiedHTML };
+    return { summary };
   } catch (error) {
-    console.error("Error simplifying HTML:", error);
-    return { simplifiedHTML: html };
+    console.error("Error summarizing page:", error);
+    return { summary: text };
   }
 }
