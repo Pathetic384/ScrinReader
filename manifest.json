@@ -21,6 +21,15 @@
       "all_frames": true
     }
   ],
+  "commands": {
+    "toggle-mode": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Space",
+        "mac": "Command+Shift+Space"
+      },
+      "description": "Switch between modes"
+    }
+  },
   "action": {
     "default_popup": "popup.html"
   },

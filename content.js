@@ -1,6 +1,179 @@
 // content.js
 console.log("Screen Reader Extension: Content script loaded on this page!");
 
+// Add these at the top with other variables
+let currentMode = "normal"; // 'normal', 'capture', 'simplify', 'language'
+let isNavigating = false;
+let elements = [];
+let currentIndex = -1;
+let isHighlighting = false;
+let selectedLanguage = "en-US";
+
+let originalHTML = null;
+let isSimplified = false;
+
+function switchMode() {
+  const modes = ["normal", "capture", "simplify", "language"];
+  const currentIndex = modes.indexOf(currentMode);
+  currentMode = modes[(currentIndex + 1) % modes.length];
+
+  // Stop any current highlighting when switching modes
+  stopHighlighting();
+
+  const modeMessages = {
+    normal: {
+      "en-US":
+        "Normal mode. Use Ctrl+Arrow keys to navigate. Ctrl+Enter to describe.",
+      "vi-VN":
+        "Chế độ bình thường. Dùng Ctrl+Mũi tên để điều hướng. Ctrl+Enter để mô tả.",
+    },
+    capture: {
+      "en-US": "Capture mode. Press Ctrl+Enter to start area selection.",
+      "vi-VN": "Chế độ chụp. Nhấn Ctrl+Enter để bắt đầu chọn vùng.",
+    },
+    simplify: {
+      "en-US": "Simplify mode. Press Ctrl+Enter to toggle simplified view.",
+      "vi-VN": "Chế độ đơn giản. Nhấn Ctrl+Enter để bật/tắt chế độ đơn giản.",
+    },
+    language: {
+      "en-US": "Language mode. Press Ctrl+Enter to switch languages.",
+      "vi-VN": "Chế độ ngôn ngữ. Nhấn Ctrl+Enter để đổi ngôn ngữ.",
+    },
+  };
+
+  // Announce the new mode
+  narrateText(modeMessages[currentMode][selectedLanguage]);
+
+  // Special handling when entering normal mode
+  if (currentMode === "normal") {
+    elements = getFocusableElements();
+    if (elements.length > 0) {
+      currentIndex = 0;
+      highlightElement(elements[currentIndex]);
+      narrateElement(elements[currentIndex]);
+
+      // Additional explanation for normal mode
+      const helpMessage =
+        selectedLanguage === "vi-VN"
+          ? "Đang chọn phần tử đầu tiên. Dùng Ctrl+Mũi tên trái/phải để điều hướng."
+          : "First element selected. Use Ctrl+Left/Right arrows to navigate.";
+      setTimeout(() => narrateText(helpMessage), 1000);
+    } else {
+      const message =
+        selectedLanguage === "vi-VN"
+          ? "Không tìm thấy phần tử nào để điều hướng"
+          : "No elements found to navigate";
+      narrateText(message);
+    }
+  }
+}
+
+// Add this keydown listener to the document
+document.addEventListener("keydown", (e) => {
+  // ESC to switch modes
+  if (e.key === "Escape") {
+    e.preventDefault();
+    switchMode();
+    return;
+  }
+
+  // Handle mode-specific shortcuts
+  if (e.ctrlKey && !e.altKey && !e.metaKey) {
+    e.preventDefault();
+
+    switch (currentMode) {
+      case "normal":
+        if (e.key === "ArrowRight") {
+          if (!elements.length) {
+            elements = getFocusableElements();
+            if (elements.length) {
+              const message =
+                selectedLanguage === "vi-VN"
+                  ? "Đã tìm thấy các phần tử để điều hướng"
+                  : "Found elements to navigate";
+              narrateText(message);
+            }
+            currentIndex = -1;
+          }
+          moveToNextElement();
+        } else if (e.key === "ArrowLeft") {
+          if (!elements.length) {
+            elements = getFocusableElements();
+            if (elements.length) {
+              const message =
+                selectedLanguage === "vi-VN"
+                  ? "Đã tìm thấy các phần tử để điều hướng"
+                  : "Found elements to navigate";
+              narrateText(message);
+            }
+            currentIndex = elements.length;
+          }
+          moveToPreviousElement();
+        } else if (e.key === "Enter") {
+          describeCurrentElement();
+        }
+        break;
+
+      case "capture":
+        if (e.key === "Enter") {
+          startAreaCapture();
+        }
+        break;
+
+      case "simplify":
+        if (e.key === "Enter") {
+          toggleSimplify();
+        }
+        break;
+
+      case "language":
+        if (e.key === "Enter") {
+          toggleLanguage();
+        }
+        break;
+    }
+  }
+});
+
+// Add these helper functions
+function startAreaCapture() {
+  isAreaCaptureMode = true;
+  createCaptureOverlay();
+  const message =
+    selectedLanguage === "vi-VN"
+      ? "Chế độ chụp ảnh đã bật. Kéo để chọn vùng bạn muốn mô tả. Nhấn ESC để hủy."
+      : "Area capture mode enabled. Drag to select the area you want to describe. Press ESC to cancel.";
+  narrateText(message);
+}
+
+async function toggleSimplify() {
+  const simplify = !isSimplified;
+  if (simplify) {
+    await simplifyPage();
+  } else {
+    restorePage();
+  }
+  const message =
+    selectedLanguage === "vi-VN"
+      ? `Trang đã được ${simplify ? "đơn giản hóa" : "khôi phục"}`
+      : `Page has been ${simplify ? "simplified" : "restored"}`;
+  narrateText(message);
+}
+
+function toggleLanguage() {
+  selectedLanguage = selectedLanguage === "en-US" ? "vi-VN" : "en-US";
+  chrome.storage.sync.set({ language: selectedLanguage });
+  chrome.runtime.sendMessage({
+    action: "changeLanguage",
+    language: selectedLanguage,
+  });
+  const message =
+    selectedLanguage === "vi-VN"
+      ? "Đã chuyển sang tiếng Việt"
+      : "Switched to English";
+  narrateText(message);
+}
+
 // Add these new functions to content.js
 let isAreaCaptureMode = false;
 let captureStartX = 0;
@@ -161,14 +334,6 @@ function cancelAreaCapture() {
       : "Area capture cancelled";
   narrateText(message);
 }
-
-let elements = [];
-let currentIndex = -1;
-let isHighlighting = false;
-let selectedLanguage = "en-US";
-
-let originalHTML = null;
-let isSimplified = false;
 
 function restorePage() {
   if (originalHTML) {
@@ -588,53 +753,92 @@ function narrateElement(element) {
 }
 
 function describeCurrentElement() {
-  if (!isHighlighting || !elements[currentIndex]) {
-    const message =
-      selectedLanguage === "vi-VN"
-        ? "Không có phần tử nào được chọn để mô tả."
-        : "No element selected to describe.";
-    narrateText(message);
-    return;
+  if (currentMode !== "normal") return;
+
+  if (!elements.length) {
+    elements = getFocusableElements();
+    if (!elements.length) {
+      const message =
+        selectedLanguage === "vi-VN"
+          ? "Không tìm thấy phần tử nào để mô tả"
+          : "No elements found to describe";
+      narrateText(message);
+      return;
+    }
+    currentIndex = 0;
+    highlightElement(elements[currentIndex]);
   }
 
-  describeAndNarrateElement(elements[currentIndex]);
+  if (currentIndex >= 0 && currentIndex < elements.length) {
+    describeAndNarrateElement(elements[currentIndex]);
+  } else {
+    const message =
+      selectedLanguage === "vi-VN"
+        ? "Không có phần tử nào được chọn để mô tả. Hãy điều hướng trước."
+        : "No element selected to describe. Please navigate first.";
+    narrateText(message);
+  }
 }
 
 function moveToNextElement() {
-  if (!isHighlighting || elements.length === 0) return;
+  if (currentMode !== "normal") return;
+
+  if (!elements.length) {
+    elements = getFocusableElements();
+    if (!elements.length) {
+      const message =
+        selectedLanguage === "vi-VN"
+          ? "Không tìm thấy phần tử nào để điều hướng"
+          : "No elements found to navigate";
+      narrateText(message);
+      return;
+    }
+    currentIndex = -1;
+  }
 
   do {
     currentIndex = (currentIndex + 1) % elements.length;
-    const currentElement = elements[currentIndex];
-    highlightElement(currentElement);
-    const content = getNarrationContent(currentElement);
+    highlightElement(elements[currentIndex]);
+    const content = getNarrationContent(elements[currentIndex]);
     if (
       content !== "No readable content" ||
       ["Image", "SVG Graphic", "Canvas (Chart)", "Table"].includes(
-        getElementType(currentElement)
+        getElementType(elements[currentIndex])
       )
     ) {
-      narrateElement(currentElement);
+      narrateElement(elements[currentIndex]);
       break;
     }
   } while (true);
 }
 
 function moveToPreviousElement() {
-  if (!isHighlighting || elements.length === 0) return;
+  if (currentMode !== "normal") return;
+
+  if (!elements.length) {
+    elements = getFocusableElements();
+    if (!elements.length) {
+      const message =
+        selectedLanguage === "vi-VN"
+          ? "Không tìm thấy phần tử nào để điều hướng"
+          : "No elements found to navigate";
+      narrateText(message);
+      return;
+    }
+    currentIndex = elements.length;
+  }
 
   do {
     currentIndex = (currentIndex - 1 + elements.length) % elements.length;
-    const currentElement = elements[currentIndex];
-    highlightElement(currentElement);
-    const content = getNarrationContent(currentElement);
+    highlightElement(elements[currentIndex]);
+    const content = getNarrationContent(elements[currentIndex]);
     if (
       content !== "No readable content" ||
       ["Image", "SVG Graphic", "Canvas (Chart)", "Table"].includes(
-        getElementType(currentElement)
+        getElementType(elements[currentIndex])
       )
     ) {
-      narrateElement(currentElement);
+      narrateElement(elements[currentIndex]);
       break;
     }
   } while (true);
@@ -758,6 +962,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         : "Area capture mode enabled. Drag to select the area you want to describe. Press ESC to cancel.";
     narrateText(message);
     sendResponse({ status: "Area capture started" });
+  } else if (message.action === "switchMode") {
+    switchMode();
+    sendResponse({ status: "Mode switched" });
   }
 });
 
