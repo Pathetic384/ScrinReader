@@ -18,59 +18,54 @@ function switchMode() {
   currentMode = modes[(currentIndex + 1) % modes.length];
 
   // Stop any current highlighting when switching modes
-  stopHighlighting();
+  if (currentMode !== "normal") {
+    stopHighlighting();
+  }
 
   const modeMessages = {
     normal: {
-      "en-US":
-        "Normal mode. Use Ctrl+Arrow keys to navigate. Ctrl+Enter to describe.",
-      "vi-VN":
-        "Chế độ bình thường. Dùng Ctrl+Mũi tên để điều hướng. Ctrl+Enter để mô tả.",
+      "en-US": "Normal mode. Ctrl to next, Ctrl+Shift to previous.",
+      "vi-VN": "Chế độ bình thường. Ctrl để tới, Ctrl+Shift để lùi.",
     },
     capture: {
-      "en-US": "Capture mode. Press Ctrl+Enter to start area selection.",
-      "vi-VN": "Chế độ chụp. Nhấn Ctrl+Enter để bắt đầu chọn vùng.",
+      "en-US": "Capture mode. Ctrl to start, Ctrl+Shift to cancel.",
+      "vi-VN": "Chế độ chụp. Ctrl để bắt đầu, Ctrl+Shift để hủy.",
     },
     simplify: {
-      "en-US": "Simplify mode. Press Ctrl+Enter to toggle simplified view.",
-      "vi-VN": "Chế độ đơn giản. Nhấn Ctrl+Enter để bật/tắt chế độ đơn giản.",
+      "en-US": "Simplify mode. Ctrl to toggle simplification.",
+      "vi-VN": "Chế độ đơn giản. Ctrl để bật/tắt.",
     },
     language: {
-      "en-US": "Language mode. Press Ctrl+Enter to switch languages.",
-      "vi-VN": "Chế độ ngôn ngữ. Nhấn Ctrl+Enter để đổi ngôn ngữ.",
+      "en-US": "Language mode. Ctrl to switch languages.",
+      "vi-VN": "Chế độ ngôn ngữ. Ctrl để đổi ngôn ngữ.",
     },
   };
 
-  // Announce the new mode
   narrateText(modeMessages[currentMode][selectedLanguage]);
 
-  // Special handling when entering normal mode
+  // Initialize normal mode if needed
   if (currentMode === "normal") {
-    elements = getFocusableElements();
-    if (elements.length > 0) {
-      currentIndex = 0;
-      highlightElement(elements[currentIndex]);
-      narrateElement(elements[currentIndex]);
-
-      // Additional explanation for normal mode
-      const helpMessage =
-        selectedLanguage === "vi-VN"
-          ? "Đang chọn phần tử đầu tiên. Dùng Ctrl+Mũi tên trái/phải để điều hướng."
-          : "First element selected. Use Ctrl+Left/Right arrows to navigate.";
-      setTimeout(() => narrateText(helpMessage), 1000);
-    } else {
-      const message =
-        selectedLanguage === "vi-VN"
-          ? "Không tìm thấy phần tử nào để điều hướng"
-          : "No elements found to navigate";
-      narrateText(message);
-    }
+    initializeNormalMode();
   }
 }
 
-// Add this keydown listener to the document
+function initializeNormalMode() {
+  elements = getFocusableElements();
+  if (elements.length > 0) {
+    currentIndex = 0;
+    highlightElement(elements[currentIndex]);
+    narrateElement(elements[currentIndex]);
+  } else {
+    const message =
+      selectedLanguage === "vi-VN"
+        ? "Không tìm thấy phần tử nào để điều hướng"
+        : "No elements found to navigate";
+    narrateText(message);
+  }
+}
+
 document.addEventListener("keydown", (e) => {
-  // ESC to switch modes
+  // ESC always switches modes
   if (e.key === "Escape") {
     e.preventDefault();
     switchMode();
@@ -83,52 +78,41 @@ document.addEventListener("keydown", (e) => {
 
     switch (currentMode) {
       case "normal":
-        if (e.key === "ArrowRight") {
-          if (!elements.length) {
-            elements = getFocusableElements();
-            if (elements.length) {
-              const message =
-                selectedLanguage === "vi-VN"
-                  ? "Đã tìm thấy các phần tử để điều hướng"
-                  : "Found elements to navigate";
-              narrateText(message);
-            }
-            currentIndex = -1;
-          }
-          moveToNextElement();
-        } else if (e.key === "ArrowLeft") {
-          if (!elements.length) {
-            elements = getFocusableElements();
-            if (elements.length) {
-              const message =
-                selectedLanguage === "vi-VN"
-                  ? "Đã tìm thấy các phần tử để điều hướng"
-                  : "Found elements to navigate";
-              narrateText(message);
-            }
-            currentIndex = elements.length;
-          }
+        // Iterate mode
+        if (e.shiftKey) {
+          // Ctrl+Shift - previous element
           moveToPreviousElement();
-        } else if (e.key === "Enter") {
-          describeCurrentElement();
+        } else {
+          // Ctrl - next element
+          moveToNextElement();
         }
         break;
 
       case "capture":
-        if (e.key === "Enter") {
+        // Screen capture mode
+        if (e.shiftKey) {
+          // Ctrl+Shift - exit capture mode
+          cancelAreaCapture();
+          switchMode(); // Return to normal mode
+        } else {
+          // Ctrl - start capture
           startAreaCapture();
         }
         break;
 
-      case "simplify":
-        if (e.key === "Enter") {
-          toggleSimplify();
+      case "language":
+        // Language mode - Ctrl toggles language
+        if (!e.shiftKey) {
+          // Only respond to Ctrl, not Ctrl+Shift
+          toggleLanguage();
         }
         break;
 
-      case "language":
-        if (e.key === "Enter") {
-          toggleLanguage();
+      case "simplify":
+        // Simplify mode - Ctrl toggles simplification
+        if (!e.shiftKey) {
+          // Only respond to Ctrl, not Ctrl+Shift
+          toggleSimplify();
         }
         break;
     }
@@ -146,18 +130,14 @@ function startAreaCapture() {
   narrateText(message);
 }
 
-async function toggleSimplify() {
+function toggleSimplify() {
   const simplify = !isSimplified;
   if (simplify) {
-    await simplifyPage();
+    simplifyPage();
   } else {
     restorePage();
   }
-  const message =
-    selectedLanguage === "vi-VN"
-      ? `Trang đã được ${simplify ? "đơn giản hóa" : "khôi phục"}`
-      : `Page has been ${simplify ? "simplified" : "restored"}`;
-  narrateText(message);
+  // No automatic mode switch - stays in simplify mode
 }
 
 function toggleLanguage() {
@@ -172,6 +152,7 @@ function toggleLanguage() {
       ? "Đã chuyển sang tiếng Việt"
       : "Switched to English";
   narrateText(message);
+  // No automatic mode switch - stays in language mode
 }
 
 // Add these new functions to content.js
@@ -781,8 +762,6 @@ function describeCurrentElement() {
 }
 
 function moveToNextElement() {
-  if (currentMode !== "normal") return;
-
   if (!elements.length) {
     elements = getFocusableElements();
     if (!elements.length) {
@@ -798,6 +777,36 @@ function moveToNextElement() {
 
   do {
     currentIndex = (currentIndex + 1) % elements.length;
+    highlightElement(elements[currentIndex]);
+    const content = getNarrationContent(elements[currentIndex]);
+    if (
+      content !== "No readable content" ||
+      ["Image", "SVG Graphic", "Canvas (Chart)", "Table"].includes(
+        getElementType(elements[currentIndex])
+      )
+    ) {
+      narrateElement(elements[currentIndex]);
+      break;
+    }
+  } while (true);
+}
+
+function moveToPreviousElement() {
+  if (!elements.length) {
+    elements = getFocusableElements();
+    if (!elements.length) {
+      const message =
+        selectedLanguage === "vi-VN"
+          ? "Không tìm thấy phần tử nào để điều hướng"
+          : "No elements found to navigate";
+      narrateText(message);
+      return;
+    }
+    currentIndex = elements.length;
+  }
+
+  do {
+    currentIndex = (currentIndex - 1 + elements.length) % elements.length;
     highlightElement(elements[currentIndex]);
     const content = getNarrationContent(elements[currentIndex]);
     if (
