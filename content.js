@@ -12,15 +12,19 @@ let selectedLanguage = "en-US";
 let originalHTML = null;
 let isSimplified = false;
 
+// Update the lastNormalModeState initialization
+let lastNormalModeState = {
+  elements: [],
+  currentIndex: -1,
+  currentElement: null, // Add this to track the actual element
+};
+
 function switchMode() {
   const modes = ["normal", "capture", "simplify", "language"];
   const currentIndex = modes.indexOf(currentMode);
   currentMode = modes[(currentIndex + 1) % modes.length];
 
-  // Stop any current highlighting when switching modes
-  if (currentMode !== "normal") {
-    stopHighlighting();
-  }
+  // REMOVED the stopHighlighting() call completely
 
   const modeMessages = {
     normal: {
@@ -42,14 +46,39 @@ function switchMode() {
   };
 
   narrateText(modeMessages[currentMode][selectedLanguage]);
-
-  // Initialize normal mode if needed
-  if (currentMode === "normal") {
-    initializeNormalMode();
-  }
 }
 
 function initializeNormalMode() {
+  // Try to restore previous state
+  if (
+    lastNormalModeState.currentElement &&
+    document.contains(lastNormalModeState.currentElement)
+  ) {
+    // If the exact element still exists in DOM, use it
+    elements = getFocusableElements();
+    currentIndex = elements.indexOf(lastNormalModeState.currentElement);
+
+    if (currentIndex >= 0) {
+      highlightElement(elements[currentIndex]);
+      narrateElement(elements[currentIndex]);
+      return;
+    }
+  }
+
+  // Fallback to position-based restoration if element not found
+  if (lastNormalModeState.elements.length > 0) {
+    elements = getFocusableElements();
+
+    // Try to find an element at the same position
+    if (lastNormalModeState.currentIndex < elements.length) {
+      currentIndex = lastNormalModeState.currentIndex;
+      highlightElement(elements[currentIndex]);
+      narrateElement(elements[currentIndex]);
+      return;
+    }
+  }
+
+  // Complete fallback - start from beginning
   elements = getFocusableElements();
   if (elements.length > 0) {
     currentIndex = 0;
@@ -78,40 +107,32 @@ document.addEventListener("keydown", (e) => {
 
     switch (currentMode) {
       case "normal":
-        // Iterate mode
         if (e.shiftKey) {
-          // Ctrl+Shift - previous element
           moveToPreviousElement();
         } else {
-          // Ctrl - next element
           moveToNextElement();
         }
         break;
 
       case "capture":
-        // Screen capture mode
         if (e.shiftKey) {
-          // Ctrl+Shift - exit capture mode
           cancelAreaCapture();
-          switchMode(); // Return to normal mode
         } else {
-          // Ctrl - start capture
-          startAreaCapture();
+          // Only start capture if not already capturing
+          if (!isAreaCaptureMode) {
+            startAreaCapture();
+          }
         }
         break;
 
       case "language":
-        // Language mode - Ctrl toggles language
         if (!e.shiftKey) {
-          // Only respond to Ctrl, not Ctrl+Shift
           toggleLanguage();
         }
         break;
 
       case "simplify":
-        // Simplify mode - Ctrl toggles simplification
         if (!e.shiftKey) {
-          // Only respond to Ctrl, not Ctrl+Shift
           toggleSimplify();
         }
         break;
@@ -123,6 +144,12 @@ document.addEventListener("keydown", (e) => {
 function startAreaCapture() {
   isAreaCaptureMode = true;
   createCaptureOverlay();
+
+  // Keep the current element highlighted underneath
+  if (elements[currentIndex]) {
+    elements[currentIndex].style.outline = "3px solid yellow";
+  }
+
   const message =
     selectedLanguage === "vi-VN"
       ? "Chế độ chụp ảnh đã bật. Kéo để chọn vùng bạn muốn mô tả. Nhấn ESC để hủy."
@@ -762,6 +789,8 @@ function describeCurrentElement() {
 }
 
 function moveToNextElement() {
+  if (currentMode !== "normal") return;
+
   if (!elements.length) {
     elements = getFocusableElements();
     if (!elements.length) {
@@ -775,8 +804,12 @@ function moveToNextElement() {
     currentIndex = -1;
   }
 
+  const startIndex = currentIndex;
   do {
     currentIndex = (currentIndex + 1) % elements.length;
+    // Prevent infinite loop if no valid elements
+    if (currentIndex === startIndex) break;
+
     highlightElement(elements[currentIndex]);
     const content = getNarrationContent(elements[currentIndex]);
     if (
@@ -868,6 +901,7 @@ function startHighlighting() {
 }
 
 function stopHighlighting() {
+  // Only call this when explicitly stopping the extension
   isHighlighting = false;
   currentIndex = -1;
   highlightElement(null);
@@ -967,7 +1001,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     createCaptureOverlay();
     const message =
       selectedLanguage === "vi-VN"
-        ? "Chế độ chụp ảnh đã bật. Kéo để chọn vùng bạn muốn mô tả. Nhấn ESC để hủy."
+        ? "Chế độ chụp ảnh đã bật. Kéo để chọn vùng bạn muốn mô tả. Nhấn Ctrl + Shift để hủy."
         : "Area capture mode enabled. Drag to select the area you want to describe. Press ESC to cancel.";
     narrateText(message);
     sendResponse({ status: "Area capture started" });
@@ -978,18 +1012,35 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 const observer = new MutationObserver(() => {
-  if (isHighlighting) {
-    elements = getFocusableElements();
-    if (elements.length === 0) {
-      stopHighlighting();
-      return;
+  if (currentMode === "normal") {
+    const newElements = getFocusableElements();
+
+    // If we have a current element, try to maintain it
+    if (elements[currentIndex] && document.contains(elements[currentIndex])) {
+      const newIndex = newElements.indexOf(elements[currentIndex]);
+      if (newIndex >= 0) {
+        elements = newElements;
+        currentIndex = newIndex;
+        highlightElement(elements[currentIndex]);
+        return;
+      }
     }
-    if (currentIndex >= elements.length || !elements[currentIndex]) {
-      currentIndex = Math.min(currentIndex, elements.length - 1);
-      if (currentIndex < 0) currentIndex = 0;
+
+    // Otherwise try to maintain position
+    if (newElements.length > 0 && currentIndex < newElements.length) {
+      elements = newElements;
+      highlightElement(elements[currentIndex]);
+    } else if (newElements.length > 0) {
+      // Reset to first element if position is invalid
+      elements = newElements;
+      currentIndex = 0;
+      highlightElement(elements[currentIndex]);
+    } else {
+      // No elements found
+      elements = [];
+      currentIndex = -1;
+      highlightElement(null);
     }
-    highlightElement(elements[currentIndex]);
-    narrateElement(elements[currentIndex]);
   }
 });
 
